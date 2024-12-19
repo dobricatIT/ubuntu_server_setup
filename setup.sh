@@ -56,32 +56,6 @@ else
     echo -e "\nЛоги найдены, продолжаем настройку Fail2Ban."
 fi
 
-# Добавление вопросов для root
-echo -e "\nНастройка доступа для root пользователя."
-read -p "Хотите добавить SSH ключ для root? (да/нет): " ssh_key_root
-ssh_key_root=$(echo "$ssh_key_root" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
-if [[ "$ssh_key_root" =~ ^(да|y|yes)$ ]]; then
-    mkdir -p "/root/.ssh"
-    chmod 700 "/root/.ssh"
-
-    read -p "Введите ваш публичный SSH ключ для root: " ssh_key
-    if [[ "$ssh_key" =~ ^ssh-(rsa|ed25519) ]]; then
-        echo "$ssh_key" > "/root/.ssh/authorized_keys"
-        chmod 600 "/root/.ssh/authorized_keys"
-        echo -e "\nSSH ключ успешно добавлен для root пользователя."
-    else
-        echo "Неверный формат SSH ключа. Настройка не выполнена."
-    fi
-fi
-
-read -p "Хотите отключить вход по паролю для root? (да/нет): " disable_password_root
-disable_password_root=$(echo "$disable_password_root" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
-if [[ "$disable_password_root" =~ ^(да|y|yes)$ ]]; then
-    sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
-    systemctl restart ssh
-    echo -e "\nВход по паролю для root отключен."
-fi
-
 read -p "Хотите создать нового пользователя для входа в систему вместо root? (да/нет): " create_new_user
 create_new_user=$(echo "$create_new_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
 
@@ -108,13 +82,14 @@ if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
     usermod -aG sudo "$username"
     echo -e "\nПользователь $username успешно создан и добавлен в группу sudo."
 
-    read -p "Хотите добавить SSH ключ для $username? (да/нет): " ssh_only
-    ssh_only=$(echo "$ssh_only" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
-    if [[ "$ssh_only" =~ ^(да|y|yes)$ ]]; then
+    # Настройка SSH ключа для нового пользователя
+    read -p "Хотите добавить SSH ключ для пользователя $username? (да/нет): " ssh_key_user
+    ssh_key_user=$(echo "$ssh_key_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+    if [[ "$ssh_key_user" =~ ^(да|y|yes)$ ]]; then
         mkdir -p "/home/$username/.ssh"
         chmod 700 "/home/$username/.ssh"
 
-        read -p "Введите ваш публичный SSH ключ: " ssh_key
+        read -p "Введите ваш публичный SSH ключ для $username: " ssh_key
         if [[ "$ssh_key" =~ ^ssh-(rsa|ed25519) ]]; then
             echo "$ssh_key" > "/home/$username/.ssh/authorized_keys"
             chmod 600 "/home/$username/.ssh/authorized_keys"
@@ -124,17 +99,41 @@ if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
             echo "Неверный формат SSH ключа. Настройка не выполнена."
         fi
     fi
+else
+    # Настройка SSH ключа для root
+    read -p "Хотите добавить SSH ключ для root? (да/нет): " ssh_key_root
+    ssh_key_root=$(echo "$ssh_key_root" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+    if [[ "$ssh_key_root" =~ ^(да|y|yes)$ ]]; then
+        mkdir -p "/root/.ssh"
+        chmod 700 "/root/.ssh"
 
-    read -p "Хотите отключить вход по паролю для $username? (да/нет): " disable_password_user
-    disable_password_user=$(echo "$disable_password_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
-    if [[ "$disable_password_user" =~ ^(да|y|yes)$ ]]; then
-        sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
-        systemctl restart ssh
-        echo -e "\nВход по паролю для $username отключен."
+        read -p "Введите ваш публичный SSH ключ для root: " ssh_key
+        if [[ "$ssh_key" =~ ^ssh-(rsa|ed25519) ]]; then
+            echo "$ssh_key" > "/root/.ssh/authorized_keys"
+            chmod 600 "/root/.ssh/authorized_keys"
+            echo -e "\nSSH ключ успешно добавлен для root пользователя."
+        else
+            echo "Неверный формат SSH ключа. Настройка не выполнена."
+        fi
     fi
 fi
 
-echo -e "\nДля повышения безопасности рекомендуется изменить порт SSH."
+read -p "Хотите отключить вход по паролю для root? (да/нет): " disable_password_root
+disable_password_root=$(echo "$disable_password_root" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+if [[ "$disable_password_root" =~ ^(да|y|yes)$ ]]; then
+    sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
+    systemctl restart ssh
+    echo -e "\nВход по паролю для root отключен."
+fi
+
+read -p "Хотите отключить вход по паролю для нового пользователя? (да/нет): " disable_password_user
+disable_password_user=$(echo "$disable_password_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+if [[ "$disable_password_user" =~ ^(да|y|yes)$ ]]; then
+    sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
+    systemctl restart ssh
+    echo -e "\nВход по паролю для нового пользователя отключен."
+fi
+
 read -p "Введите новый порт SSH (рекомендуется диапазон от 1024 до 65535): " ssh_port
 if [[ "$ssh_port" =~ ^[0-9]+$ ]] && ((ssh_port >= 1024 && ssh_port <= 65535)); then
     sed -i "s/^#Port 22/Port $ssh_port/" /etc/ssh/sshd_config
