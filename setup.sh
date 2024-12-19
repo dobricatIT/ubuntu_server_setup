@@ -13,7 +13,7 @@ show_progress() {
     local color_empty="\e[41m"  # красный фон
 
     # Построение строки прогресс-бара
-    printf "\r["
+    printf "\r[" 
     printf "${color_fill}%*s${color_reset}" "$fill" ""
     printf "${color_empty}%*s${color_reset}" "$empty" ""
     printf "] %d%%" "$progress"
@@ -75,10 +75,14 @@ else
 fi
 
 # Запрос на создание нового пользователя вместо root
-read -p "Хотите создать нового пользователя для входа в систему вместо root? (да/нет): " create_new_user
+echo -e "\nХотите создать нового пользователя для входа в систему вместо root? (да/нет)"
+read -p "(Ваш ответ: да или нет): " create_new_user
 
 # Убираем пробелы и конвертируем ответ в нижний регистр для корректной проверки
 create_new_user=$(echo "$create_new_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+
+# Переменная для хранения имени пользователя, для которого будем настраивать SSH
+target_user="root"
 
 if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
     # Запрос имени нового пользователя
@@ -106,42 +110,47 @@ if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
     usermod -aG sudo "$username"
 
     echo -e "\nПользователь $username успешно создан и добавлен в группу sudo."
+    target_user="$username"
 else
     echo -e "\nОставляем root-пользователя для входа в систему."
 fi
 
-# Вопрос о добавлении SSH ключа для входа
-read -p "Хотите добавить SSH ключ для входа? (да/нет): " add_ssh_key
-add_ssh_key=$(echo "$add_ssh_key" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+# Запрос на добавление SSH ключа
+echo -e "\nХотите добавить SSH ключ для входа в систему? (да/нет)"
+read -p "(Ваш ответ: да или нет): " add_ssh_key
 
 if [[ "$add_ssh_key" =~ ^(да|y|yes)$ ]]; then
-    echo "Вставьте ваш публичный SSH ключ (одной строкой) и нажмите Enter:"
+    echo -e "\nВведите ваш публичный SSH ключ (вставьте содержимое .pub файла):"
     read ssh_key
-    if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
-        mkdir -p "/home/$username/.ssh"
-        echo "$ssh_key" >> "/home/$username/.ssh/authorized_keys"
-        chmod 600 "/home/$username/.ssh/authorized_keys"
-        chown -R "$username:$username" "/home/$username/.ssh"
-        echo "SSH ключ добавлен для пользователя $username."
-    else
+
+    # Создаем директорию .ssh и устанавливаем правильные разрешения
+    if [[ "$target_user" == "root" ]]; then
         mkdir -p /root/.ssh
         echo "$ssh_key" >> /root/.ssh/authorized_keys
+        chmod 700 /root/.ssh
         chmod 600 /root/.ssh/authorized_keys
-        echo "SSH ключ добавлен для пользователя root."
+    else
+        mkdir -p /home/$target_user/.ssh
+        echo "$ssh_key" >> /home/$target_user/.ssh/authorized_keys
+        chmod 700 /home/$target_user/.ssh
+        chmod 600 /home/$target_user/.ssh/authorized_keys
+        chown -R $target_user:$target_user /home/$target_user/.ssh
     fi
 
-    # Вопрос об отключении входа по паролю
-    read -p "Хотите отключить вход по паролю? (да/нет): " disable_password_login
-    disable_password_login=$(echo "$disable_password_login" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+    echo -e "\nSSH ключ успешно добавлен."
 
-    if [[ "$disable_password_login" =~ ^(да|y|yes)$ ]]; then
-        sed -i '/^#*PasswordAuthentication/s/^#*\(.*\)/PasswordAuthentication no/' /etc/ssh/sshd_config
-        echo "Вход по паролю отключен."
+    # Запрос на отключение входа по паролю
+    echo -e "\nХотите отключить вход по паролю (оставить только вход по SSH ключу)? (да/нет)"
+    read -p "(Ваш ответ: да или нет): " disable_password_auth
+
+    if [[ "$disable_password_auth" =~ ^(да|y|yes)$ ]]; then
+        sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+        sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+        systemctl restart ssh
+        echo -e "\nВход по паролю отключен. Теперь доступен только вход по SSH ключу."
+    else
+        echo -e "\nВход по паролю оставлен включенным."
     fi
-
-    # Перезапуск SSH службы
-    systemctl restart ssh
-    echo "Служба SSH перезапущена."
 fi
 
 # Настройка порта для SSH
@@ -153,7 +162,6 @@ while true; do
     else
         echo "Пожалуйста, введите корректный порт в диапазоне от 1024 до 65535."
     fi
-
 done
 
 # Настройка порта SSH в конфигурации
