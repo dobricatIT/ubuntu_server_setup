@@ -75,8 +75,7 @@ else
 fi
 
 # Запрос на создание нового пользователя вместо root
-echo -e "\nХотите создать нового пользователя для входа в систему вместо root? (да/нет)"
-read -p "(Ваш ответ: да или нет): " create_new_user
+read -p "Хотите создать нового пользователя для входа в систему вместо root? (да/нет): " create_new_user
 
 # Убираем пробелы и конвертируем ответ в нижний регистр для корректной проверки
 create_new_user=$(echo "$create_new_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
@@ -112,28 +111,27 @@ else
 fi
 
 # Вопрос о добавлении SSH ключа для входа
-echo -e "\nХотите добавить SSH ключ для входа? (да/нет)"
-read -p "(Ваш ответ: да или нет): " add_ssh_key
+read -p "Хотите добавить SSH ключ для входа? (да/нет): " add_ssh_key
 add_ssh_key=$(echo "$add_ssh_key" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
 
 if [[ "$add_ssh_key" =~ ^(да|y|yes)$ ]]; then
-    read -p "Введите путь к вашему публичному SSH ключу (например, ~/.ssh/id_rsa.pub): " ssh_key_path
+    echo "Вставьте ваш публичный SSH ключ (одной строкой) и нажмите Enter:"
+    read ssh_key
     if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
         mkdir -p "/home/$username/.ssh"
-        cat "$ssh_key_path" >> "/home/$username/.ssh/authorized_keys"
+        echo "$ssh_key" >> "/home/$username/.ssh/authorized_keys"
         chmod 600 "/home/$username/.ssh/authorized_keys"
         chown -R "$username:$username" "/home/$username/.ssh"
         echo "SSH ключ добавлен для пользователя $username."
     else
         mkdir -p /root/.ssh
-        cat "$ssh_key_path" >> /root/.ssh/authorized_keys
+        echo "$ssh_key" >> /root/.ssh/authorized_keys
         chmod 600 /root/.ssh/authorized_keys
         echo "SSH ключ добавлен для пользователя root."
     fi
 
     # Вопрос об отключении входа по паролю
-    echo -e "\nХотите отключить вход по паролю? (да/нет)"
-    read -p "(Ваш ответ: да или нет): " disable_password_login
+    read -p "Хотите отключить вход по паролю? (да/нет): " disable_password_login
     disable_password_login=$(echo "$disable_password_login" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
 
     if [[ "$disable_password_login" =~ ^(да|y|yes)$ ]]; then
