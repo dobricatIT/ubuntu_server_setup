@@ -56,6 +56,32 @@ else
     echo -e "\nЛоги найдены, продолжаем настройку Fail2Ban."
 fi
 
+# Добавление вопросов для root
+echo -e "\nНастройка доступа для root пользователя."
+read -p "Хотите добавить SSH ключ для root? (да/нет): " ssh_key_root
+ssh_key_root=$(echo "$ssh_key_root" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+if [[ "$ssh_key_root" =~ ^(да|y|yes)$ ]]; then
+    mkdir -p "/root/.ssh"
+    chmod 700 "/root/.ssh"
+
+    read -p "Введите ваш публичный SSH ключ для root: " ssh_key
+    if [[ "$ssh_key" =~ ^ssh-(rsa|ed25519) ]]; then
+        echo "$ssh_key" > "/root/.ssh/authorized_keys"
+        chmod 600 "/root/.ssh/authorized_keys"
+        echo -e "\nSSH ключ успешно добавлен для root пользователя."
+    else
+        echo "Неверный формат SSH ключа. Настройка не выполнена."
+    fi
+fi
+
+read -p "Хотите отключить вход по паролю для root? (да/нет): " disable_password_root
+disable_password_root=$(echo "$disable_password_root" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+if [[ "$disable_password_root" =~ ^(да|y|yes)$ ]]; then
+    sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
+    systemctl restart ssh
+    echo -e "\nВход по паролю для root отключен."
+fi
+
 read -p "Хотите создать нового пользователя для входа в систему вместо root? (да/нет): " create_new_user
 create_new_user=$(echo "$create_new_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
 
@@ -82,94 +108,38 @@ if [[ "$create_new_user" =~ ^(да|y|yes)$ ]]; then
     usermod -aG sudo "$username"
     echo -e "\nПользователь $username успешно создан и добавлен в группу sudo."
 
-    # Вопрос о настройке входа только по SSH
-    read -p "Хотите разрешить вход только по SSH для пользователя $username? (да/нет): " ssh_only
+    read -p "Хотите добавить SSH ключ для $username? (да/нет): " ssh_only
     ssh_only=$(echo "$ssh_only" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
-
     if [[ "$ssh_only" =~ ^(да|y|yes)$ ]]; then
-        # SSH Key Setup
-        echo -e "\nНастройка входа по SSH ключу для пользователя $username."
         mkdir -p "/home/$username/.ssh"
         chmod 700 "/home/$username/.ssh"
 
         read -p "Введите ваш публичный SSH ключ: " ssh_key
-
         if [[ "$ssh_key" =~ ^ssh-(rsa|ed25519) ]]; then
             echo "$ssh_key" > "/home/$username/.ssh/authorized_keys"
             chmod 600 "/home/$username/.ssh/authorized_keys"
             chown -R "$username:$username" "/home/$username/.ssh"
             echo -e "\nSSH ключ успешно настроен для пользователя $username."
-
-            # Запрет входа по паролю
-            sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
-            systemctl restart ssh
-            echo -e "\nВход по паролю отключен, разрешен только вход по SSH ключу."
         else
             echo "Неверный формат SSH ключа. Настройка не выполнена."
         fi
-    else
-        echo -e "\nНастройка входа только по SSH пропущена."
     fi
-else
-    echo -e "\nОставляем root-пользователя для входа в систему."
+
+    read -p "Хотите отключить вход по паролю для $username? (да/нет): " disable_password_user
+    disable_password_user=$(echo "$disable_password_user" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+    if [[ "$disable_password_user" =~ ^(да|y|yes)$ ]]; then
+        sed -i "/^#*PasswordAuthentication/s/^#*.*/PasswordAuthentication no/" /etc/ssh/sshd_config
+        systemctl restart ssh
+        echo -e "\nВход по паролю для $username отключен."
+    fi
 fi
 
-while true; do
-    echo "Для повышения безопасности сервера рекомендуется изменить стандартный порт SSH."
-    read -p "Введите новый порт SSH (рекомендуется диапазон от 1024 до 65535): " ssh_port
-    if [[ "$ssh_port" =~ ^[0-9]+$ ]] && ((ssh_port >= 1024 && ssh_port <= 65535)); then
-        break
-    else
-        echo "Пожалуйста, введите корректный порт в диапазоне от 1024 до 65535."
-    fi
-
-done
-
-sed -i "s/^#Port 22/Port $ssh_port/" /etc/ssh/sshd_config
-systemctl restart ssh
-echo -e "\nПорт SSH успешно изменен на $ssh_port."
-
-echo "Настройка фаервола (ufw)..."
-ufw allow "$ssh_port"/tcp >/dev/null 2>&1
-show_progress 20
-ufw allow http >/dev/null 2>&1
-ufw allow https >/dev/null 2>&1
-show_progress 50
-ufw default deny incoming >/dev/null 2>&1
-ufw default allow outgoing >/dev/null 2>&1
-show_progress 70
-ufw --force enable >/dev/null 2>&1
-show_progress 100
-echo -e "\nФаервол успешно настроен!"
-
-read -p "Хотите запретить вход по SSH для root-пользователя? (да/нет): " disable_root_ssh
-if [[ "$disable_root_ssh" =~ ^(да|y|yes)$ ]]; then
-    sed -i '/^#*PermitRootLogin/s/^#*.*/PermitRootLogin no/' /etc/ssh/sshd_config
+echo -e "\nДля повышения безопасности рекомендуется изменить порт SSH."
+read -p "Введите новый порт SSH (рекомендуется диапазон от 1024 до 65535): " ssh_port
+if [[ "$ssh_port" =~ ^[0-9]+$ ]] && ((ssh_port >= 1024 && ssh_port <= 65535)); then
+    sed -i "s/^#Port 22/Port $ssh_port/" /etc/ssh/sshd_config
     systemctl restart ssh
-    echo -e "\nВход по SSH для root-пользователя успешно запрещен."
+    echo -e "\nПорт SSH успешно изменен на $ssh_port."
 else
-    echo -e "\nВход по SSH для root-пользователя оставлен включенным."
-fi
-
-read -p "Хотите установить защиту от брутфорса с помощью fail2ban? (да/нет): " install_fail2ban
-if [[ "$install_fail2ban" =~ ^(да|y|yes)$ ]]; then
-    echo -e "\nНастройка fail2ban..."
-    read -p "Введите количество неудачных попыток входа до блокировки: " max_attempts
-    read -p "Введите время блокировки в секундах: " bantime
-    read -p "Введите временной интервал (в секундах) для подсчета попыток: " findtime
-
-    cat <<EOL > /etc/fail2ban/jail.d/ssh.local
-[sshd]
-enabled = true
-port    = $ssh_port
-logpath = /var/log/auth.log
-maxretry = $max_attempts
-bantime = $bantime
-findtime = $findtime
-EOL
-
-    systemctl restart fail2ban
-    echo -e "\nЗащита от брутфорса с помощью fail2ban настроена и активирована."
-else
-    echo -e "\nЗащита от брутфорса с помощью fail2ban не будет установлена."
+    echo "Некорректный порт. Настройка пропущена."
 fi
